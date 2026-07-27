@@ -42,6 +42,7 @@
 #include <ArduinoJson.h>
 #include <TFT_eSPI.h>
 #include <time.h>
+#include <cmath>
 
 #if ARDUINO_USB_MODE == 1
   #warning "USB Mode 'Hardware CDC and JTAG' secili - USB HID Gamepad calismaz. Tools > USB Mode > USB-OTG (TinyUSB) sec."
@@ -116,6 +117,12 @@ const char KEY_HIGH_BEAM    = 'k';
 const char KEY_HORN         = 'h';
 const char KEY_CRUISE       = 'c';
 // ================================
+
+// ============ FORWARD DECLARATIONS ============
+void sendVibration(int ms);
+void handleKeyAction(const char* action);
+void checkVibrationFeedback();
+// ==============================================
 
 // ============ HTML SAYFA ============
 const char PAGE_HTML[] PROGMEM = R"HTML(
@@ -346,6 +353,23 @@ setInterval(send, 100);
 </html>
 )HTML";
 
+// ============ TITRESIM GERI BILDIRIMI ============
+void sendVibration(int ms) {
+  char msg[32];
+  snprintf(msg, sizeof(msg), "{\"vibrate\":%d}", ms);
+  ws.textAll(msg);
+}
+
+void checkVibrationFeedback() {
+  if (telemetryRpm > RPM_REDLINE && !redlineWarned) {
+    sendVibration(250);
+    redlineWarned = true;
+  } else if (telemetryRpm < RPM_REDLINE - 300) {
+    redlineWarned = false;
+  }
+}
+// ================================================
+
 // ============ WEBSOCKET ISLEMCISI ============
 void handleKeyAction(const char* action) {
   String a = action;
@@ -426,7 +450,6 @@ void checkConnectionSafety() {
     steering = 0;
     throttle = 0;
     brake    = 1;
-    // Baglanti koptu - acil duruma gec, F1 basma
     if (!safetyKeySent) {
       Keyboard.press(KEY_F1);
       delay(100);
@@ -438,23 +461,6 @@ void checkConnectionSafety() {
   }
 }
 // ===========================================
-
-// ============ TITRESIM GERI BILDIRIMI ============
-void sendVibration(int ms) {
-  char msg[32];
-  snprintf(msg, sizeof(msg), "{\"vibrate\":%d}", ms);
-  ws.textAll(msg);
-}
-
-void checkVibrationFeedback() {
-  if (telemetryRpm > RPM_REDLINE && !redlineWarned) {
-    sendVibration(250);
-    redlineWarned = true;
-  } else if (telemetryRpm < RPM_REDLINE - 300) {
-    redlineWarned = false;
-  }
-}
-// ================================================
 
 // ============ USB HID GAMEPAD ============
 void updateGamepad() {
@@ -598,17 +604,23 @@ void updateDashboardAnim() {
   if (fabs(telemetrySpeed - dispSpeed) < 0.4f) dispSpeed = telemetrySpeed;
   if (fabs(telemetryRpm   - dispRpm)   < 3.0f) dispRpm   = telemetryRpm;
 
-  int roundedSpeed = (int)roundf(dispSpeed);
-  int roundedRpm   = (int)roundf(dispRpm);
+  int roundedSpeed = (int)round(dispSpeed);
+  int roundedRpm   = (int)round(dispRpm);
 
-  if (roundedSpeed != prevSpeed) { prevSpeed = roundedSpeed; drawSpeed(roundedSpeed); }
+  if (roundedSpeed != prevSpeed) {
+    prevSpeed = roundedSpeed;
+    drawSpeed(roundedSpeed);
+  }
 
   bool wasRed = redBlinkOn;
   if (roundedRpm >= RPM_REDLINE && millis() - lastRedBlink > 220) {
     redBlinkOn = !redBlinkOn;
     lastRedBlink = millis();
   }
-  if (roundedRpm != prevRpm || wasRed != redBlinkOn) { prevRpm = roundedRpm; drawRpmBar(roundedRpm); }
+  if (roundedRpm != prevRpm || wasRed != redBlinkOn) {
+    prevRpm = roundedRpm;
+    drawRpmBar(roundedRpm);
+  }
 
   if (telemetryGear != prevGear) {
     prevGear = telemetryGear;
